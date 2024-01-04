@@ -1,1 +1,290 @@
-add,delete,update, using sequilizer with postgresql
+//app
+//1config
+///db.confog.js
+module.exports = {
+  HOST: "localhost",
+  USER: "postgres",
+  PASSWORD: "anbu@2023",
+  DB: "testdb",
+  dialect: "postgres",
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000,
+  },
+};
+
+//2.controllers
+///tutorial.controller.js
+
+const db = require("../models");
+const Tutorial = db.tutorials;
+const Op = db.Sequelize.Op;
+
+// create
+exports.create = (req, res) => {
+  if (!req.body.title) {
+    res.status(400).send({
+      message: "Content can not be empty!",
+    });
+    return;
+  }
+
+  const tutorial = {
+    title: req.body.title,
+    description: req.body.description,
+    published: req.body.published ? req.body.published : false,
+  };
+
+  Tutorial.create(tutorial)
+    .then((data) => {
+      res.send(data);
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message:
+          err.message || "Some error occurred while creating the Tutorial.",
+      });
+    });
+};
+
+// Retrieve all Tutorials/ find by title from the database:
+exports.findAll = (req, res) => {
+  const title = req.query.title;
+  var condition = title ? { title: { [Op.iLike]: `%${title}%` } } : null;
+
+  Tutorial.findAll({ where: condition })
+    .then((data) => {
+      res.send(data);
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message:
+          err.message || "Some error occurred while retrieving tutorials.",
+      });
+    });
+};
+
+// Retrieve a single object
+
+exports.findOne = (req, res) => {
+  const id = req.params.id;
+
+  Tutorial.findByPk(id)
+    .then((data) => {
+      if (data) {
+        res.send(data);
+      } else {
+        res.status(404).send({
+          message: `Cannot find Tutorial with id=${id}.`,
+        });
+      }
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message: "Error retrieving Tutorial with id=" + id,
+      });
+    });
+};
+
+// Update an object
+
+exports.update = (req, res) => {
+  const id = req.params.id;
+
+  Tutorial.update(req.body, {
+    where: { id: id },
+  })
+    .then((num) => {
+      if (num == 1) {
+        res.send({
+          message: "Tutorial was updated successfully.",
+        });
+      } else {
+        res.send({
+          message: `Cannot update Tutorial with id=${id}. Maybe Tutorial was not found or req.body is empty!`,
+        });
+      }
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message: "Error updating Tutorial with id=" + id,
+      });
+    });
+};
+
+//Delete an object
+
+exports.delete = (req, res) => {
+  const id = req.params.id;
+
+  Tutorial.destroy({
+    where: { id: id },
+  })
+    .then((num) => {
+      if (num == 1) {
+        res.send({
+          message: "Tutorial was deleted successfully!",
+        });
+      } else {
+        res.send({
+          message: `Cannot delete Tutorial with id=${id}. Maybe Tutorial was not found!`,
+        });
+      }
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message: "Could not delete Tutorial with id=" + id,
+      });
+    });
+};
+
+// Delete all objects
+
+exports.deleteAll = (req, res) => {
+  Tutorial.destroy({
+    where: {},
+    truncate: false,
+  })
+    .then((nums) => {
+      res.send({ message: `${nums} Tutorials were deleted successfully!` });
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message:
+          err.message || "Some error occurred while removing all tutorials.",
+      });
+    });
+};
+
+//Find all objects by condition
+
+exports.findAllPublished = (req, res) => {
+  Tutorial.findAll({ where: { published: true } })
+    .then((data) => {
+      res.send(data);
+    })
+    .catch((err) => {
+      res.status(500).send({
+        message:
+          err.message || "Some error occurred while retrieving tutorials.",
+      });
+    });
+};
+
+3.models
+///index.js
+const dbConfig = require("../config/db.config.js");
+
+const Sequelize = require("sequelize");
+const sequelize = new Sequelize(dbConfig.DB, dbConfig.USER, dbConfig.PASSWORD, {
+  host: dbConfig.HOST,
+  dialect: dbConfig.dialect,
+  operatorsAliases: false,
+
+  pool: {
+    max: dbConfig.pool.max,
+    min: dbConfig.pool.min,
+    acquire: dbConfig.pool.acquire,
+    idle: dbConfig.pool.idle,
+  },
+});
+
+const db = {};
+
+db.Sequelize = Sequelize;
+db.sequelize = sequelize;
+
+db.tutorials = require("./tutorial.model.js")(sequelize, Sequelize);
+
+module.exports = db;
+///tutorial.model.js
+module.exports = (sequelize, Sequelize) => {
+  const Tutorial = sequelize.define("tutorial", {
+    title: {
+      type: Sequelize.STRING,
+    },
+    description: {
+      type: Sequelize.STRING,
+    },
+    published: {
+      type: Sequelize.BOOLEAN,
+    },
+  });
+
+  return Tutorial;
+};
+//4.routes
+///tutorial.routes.js
+module.exports = (app) => {
+  const tutorials = require("../controllers/tutorial.controller.js");
+
+  var router = require("express").Router();
+
+  // Create a new Tutorial
+  router.post("/", tutorials.create);
+
+  // Retrieve all Tutorials
+  router.get("/", tutorials.findAll);
+
+  // Retrieve all published Tutorials
+  router.get("/published", tutorials.findAllPublished);
+
+  // Retrieve a single Tutorial with id
+  router.get("/:id", tutorials.findOne);
+
+  // Update a Tutorial with id
+  router.put("/:id", tutorials.update);
+
+  // Delete a Tutorial with id
+  router.delete("/:id", tutorials.delete);
+
+  // Create a new Tutorial
+  router.delete("/", tutorials.deleteAll);
+
+  app.use("/api/tutorials", router);
+};
+///server.js
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+
+const app = express();
+
+var corsOptions = {
+  origin: "http://localhost:8081",
+};
+
+app.use(cors());
+
+app.use(express.json());
+
+app.use(express.urlencoded({ extended: true }));
+
+const db = require("./app/models");
+
+db.sequelize
+  .sync()
+  .then(() => {
+    console.log("Synced db.");
+  })
+  .catch((err) => {
+    console.log("Failed to sync db: " + err.message);
+  });
+// db.sequelize.sync({ force: true }).then(() => {
+//   console.log("Drop and re-sync db.");
+// });
+
+// simple route
+app.get("/", (req, res) => {
+  res.json({ message: "Welcome to bezkoder application." });
+});
+
+require("./app/routes/tutorial.routes")(app);
+
+// set port, listen for requests
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}.`);
+});
